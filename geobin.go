@@ -1027,33 +1027,6 @@ func objectFromJSON(json string) Object {
 	}
 }
 
-// Collection returns the child objects for GeometryCollection and
-// FeatureCollection geometry objects.
-func (o Object) Collection() []Object {
-	if len(o.data) == 0 ||
-		o.data[len(o.data)-1]&1 != 1 ||
-		o.data[len(o.data)-1]>>3&1 != 1 {
-		// not a complex object
-		return nil
-	}
-	c := o.parseComponents()
-	data := c.data
-	typ := data[0] >> 4
-	if typ != 6 && typ != 8 {
-		// not a collection
-		return nil
-	}
-	n := int(binary.LittleEndian.Uint32(data[1:]))
-	data = data[5:]
-	geoms := make([]Object, n)
-	for i := 0; i < n; i++ {
-		sz := int(binary.LittleEndian.Uint32(data))
-		geoms[i] = Object{data[4 : 4+sz : 4+sz]}
-		data = data[4+sz:]
-	}
-	return geoms
-}
-
 // GeometryType represents a geojson geometry type
 type GeometryType byte
 
