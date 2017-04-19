@@ -1,9 +1,7 @@
 package geobin
 
 import (
-	"crypto/md5"
 	"encoding/binary"
-	"encoding/hex"
 	"encoding/json"
 	"math"
 	"strconv"
@@ -487,10 +485,6 @@ func appendGeojsonBytesPolygon(json []byte, pairs [][]float64) []byte {
 	}
 	json = append(json, ']')
 	return json
-}
-func (o Object) hash() string {
-	b := md5.Sum(o.data)
-	return hex.EncodeToString(b[:])
 }
 func (o Object) geojsonBytes() []byte {
 	return appendGeojsonBytes(nil, o)
