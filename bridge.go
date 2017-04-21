@@ -66,6 +66,39 @@ func (g Object) Geohash(precision int) (string, error) {
 // IsBBoxDefined returns true if the object has a defined bbox.
 func (g Object) IsBBoxDefined() bool { return g.bridge().IsBBoxDefined() }
 
+func (g Object) Sparse(amount byte) []Object {
+	gb := g.BBox()
+	b := geojson.BBox{
+		Min: geojson.Position{gb.Min.X, gb.Min.Y, gb.Min.Z},
+		Max: geojson.Position{gb.Max.X, gb.Max.Y, gb.Max.Z},
+	}
+	bb := b.Sparse(amount)
+	var res []Object
+	for _, b := range bb {
+		res = append(res, Make3DRect(b.Min.X, b.Min.Y, b.Min.Z, b.Max.X, b.Max.Y, b.Max.Z))
+	}
+	return res
+}
+
+func BBoxFromCenter(lat float64, lon float64, meters float64) Object {
+	b := geojson.BBoxesFromCenter(lat, lon, meters)
+	return Make2DRect(b.Min.X, b.Min.Y, b.Max.X, b.Max.Y)
+}
+
+// DistanceTo calculates the distance to a position
+func (p Position) DistanceTo(position Position) float64 {
+	p1 := geojson.Position{p.X, p.Y, p.Z}
+	p2 := geojson.Position{position.X, position.Y, position.Z}
+	return p1.DistanceTo(p2)
+}
+
+// Destination calculates a new position based on the distance and bearing.
+func (p Position) Destination(meters, bearingDegrees float64) Position {
+	p1 := geojson.Position{p.X, p.Y, p.Z}
+	p2 := p1.Destination(meters, bearingDegrees)
+	return Position{p2.X, p2.Y, p2.Z}
+}
+
 func geomReadPosition(data []byte, dims int) (geojson.Position, []byte) {
 	var p geojson.Position
 	p.X, data = readFloat64(data)

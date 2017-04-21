@@ -1118,8 +1118,13 @@ func readFloat64(data []byte) (float64, []byte) {
 	return f, data[8:]
 }
 
-// polyReadPosition reads a point from a data and returns the new point.
-func polyReadPosition(data []byte, dims int) (Position, []byte) {
+// readUint32 reads a uint32 from data and returns as an int.
+func readUint32(data []byte) (int, []byte) {
+	return int(binary.LittleEndian.Uint32(data)), data[4:]
+}
+
+// readPosition reads a point from a data and returns the new point.
+func readPosition(data []byte, dims int) (Position, []byte) {
 	var p Position
 	p.X, data = readFloat64(data)
 	p.Y, data = readFloat64(data)
@@ -1129,6 +1134,7 @@ func polyReadPosition(data []byte, dims int) (Position, []byte) {
 	return p, data
 }
 
+/*
 // Geometry returns the underlying geometry points or collection. The geom is
 // one of the following for the geomType:
 // Unknown -> nil;
@@ -1267,40 +1273,124 @@ func (o Object) Geometry() (geom interface{}, dims int, geomType GeometryType) {
 	}
 	return
 }
+*/
 
 // PositionCount returns the total number of points in the geometry.
 func (o Object) PositionCount() int {
-	geom, _, geomType := o.Geometry()
-	switch geomType {
-	default:
-		return 0
-	case Point:
-		return 1
-	case MultiPoint, LineString:
-		points := geom.([]Position)
-		return len(points)
-	case MultiLineString, Polygon:
-		var n int
-		points := geom.([][]Position)
-		for _, points := range points {
-			n += len(points)
+	return o.Geometry().PositionCount()
+}
+
+type Geometry struct {
+	Data   []byte
+	Dims   int
+	Type   GeometryType
+	Simple bool
+}
+
+func (o Object) Geometry() Geometry {
+	var geom Geometry
+	if len(o.data) == 0 {
+		return geom // not a geometry
+	}
+	tail := o.data[len(o.data)-1]
+	if tail&1 == 0 {
+		return geom // not a geometry
+	}
+	var bboxSize int
+	if tail>>1&1 == 1 {
+		geom.Dims = 3
+		if tail>>2&1 == 1 {
+			bboxSize = 48 // 3D rect
+		} else {
+			bboxSize = 24 // 3D point
 		}
-		return n
+	} else {
+		geom.Dims = 2
+		if tail>>2&1 == 1 {
+			// 2D rect
+			bboxSize = 32
+		} else {
+			// 2D point
+			bboxSize = 16
+		}
+	}
+	if (tail>>3)&1 == 0 {
+		// simple
+		geom.Simple = true
+		geom.Data = o.data
+		switch bboxSize {
+		case 48:
+			geom.Type = MultiPolygon
+		case 32:
+			geom.Type = Polygon
+		case 24:
+			geom.Type = Point
+		case 16:
+			geom.Type = Point
+		}
+		return geom
+	}
+	// complex, let's pull the geom data
+	geom.Data = o.data[bboxSize:]
+	if tail>>4&1 == 1 {
+		// has exdata, skip over
+		exsz := int(binary.LittleEndian.Uint32(o.data[len(o.data)-5:]))
+		geom.Data = geom.Data[exsz:]
+	}
+	geom.Type = GeometryType(geom.Data[0] >> 4)
+	if geom.Data[0]&1 == 1 {
+		// has members, skip over
+		sz := int(binary.LittleEndian.Uint32(geom.Data[1:]))
+		geom.Data = geom.Data[5+sz:]
+	} else {
+		geom.Data = geom.Data[1:]
+	}
+	return geom
+}
+func (g Geometry) PositionCount() int {
+	if g.Type == Point {
+		return 1
+	}
+	if g.Simple {
+		return 2
+	}
+	var count int
+	switch g.Type {
+	case MultiPoint, LineString:
+		count, _ = readUint32(g.Data)
+	case MultiLineString, Polygon:
+		n, data := readUint32(g.Data)
+		for i := 0; i < n; i++ {
+			var nn int
+			nn, data = readUint32(data)
+			count += nn
+			data = data[nn*8*g.Dims:]
+		}
 	case MultiPolygon:
-		var n int
-		points := geom.([][][]Position)
-		for _, points := range points {
-			for _, points := range points {
-				n += len(points)
+		n, data := readUint32(g.Data)
+		for i := 0; i < n; i++ {
+			var nn int
+			nn, data = readUint32(data)
+			for i := 0; i < nn; i++ {
+				var nnn int
+				nnn, data = readUint32(data)
+				count += nnn
+				data = data[nnn*8*g.Dims:]
 			}
 		}
-		return n
 	case GeometryCollection, FeatureCollection:
-		var n int
-		geoms := geom.([]Object)
-		for _, geom := range geoms {
-			n += geom.PositionCount()
+		n, data := readUint32(g.Data)
+		for i := 0; i < n; i++ {
+			var sz int
+			sz, data = readUint32(data)
+			o := Object{data[:sz]}
+			count += o.Geometry().PositionCount()
+			data = data[sz:]
 		}
-		return n
+	case Feature:
+		sz, data := readUint32(g.Data)
+		o := Object{data[:sz]}
+		count = o.Geometry().PositionCount()
 	}
+	return count
 }
