@@ -7,7 +7,7 @@ The Geobin Object represents tightly packed geometry that is compatible with [Ge
 
 The purpose of this package is to provide a new binary format for Tile38 geometries.
 Tile38 currently uses standard Go structs that contain nested pointer, slices, arrays, etc. 
-This new format is packed in a contiguous byte stream that can be packed inside a [Pair object](https://github.com/tidwall/pair). It also precalcs the bbox for fast spatial indexing.
+This new format is stored as a contiguous byte stream that can be packed inside a [Pair object](https://github.com/tidwall/pair). It also precalcs the bbox for fast spatial indexing.
 
 **This project is a (sweet) work in progress. The API will likely change between now and Tile38 v2.0 release.**
 
