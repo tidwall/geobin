@@ -5,6 +5,8 @@ The Geobin Object represents tightly packed geometry that is compatible with [Ge
 
 [Specification](SPEC.md)
 
+**This project is a work in progress**
+
 ## Contact
 
 Josh Baker [@tidwall](http://twitter.com/tidwall)

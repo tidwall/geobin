@@ -174,7 +174,7 @@ func TestStringToJSON(t *testing.T) {
 	o2 := o.SetExData([]byte("extra"))
 	assert.Equal(t, []byte("extra"), o2.ExData())
 	assert.Equal(t, []byte(""), o.ExData())
-	assert.Equal(t, 0, o.PointCount())
+	assert.Equal(t, 0, o.PositionCount())
 	assert.Equal(t, 0, o.Dims())
 	assert.Equal(t, o2.String(), o.String())
 	assert.Equal(t, o2.JSON(), o.JSON())
@@ -195,7 +195,7 @@ func testVarious(t *testing.T, json string, pointCount int, typ GeometryType) {
 	assertJSON(t, json, o3.String())
 	assertJSON(t, json, o.JSON())
 	assert.Equal(t, typ, o.GeometryType())
-	assert.Equal(t, pointCount, o.PointCount())
+	assert.Equal(t, pointCount, o.PositionCount())
 }
 func TestPointJSON(t *testing.T) {
 	testVarious(t, `{"type":"Point","coordinates":[100.1,5.1],"bbox":[0.1,0.1,100.1,100.1]}`, 1, Point)

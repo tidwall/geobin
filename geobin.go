@@ -10,6 +10,10 @@ import (
 	"github.com/tidwall/pretty"
 )
 
+type Position struct {
+	X, Y, Z float64
+}
+
 // Object represents a packed geobin object
 type Object struct {
 	data []byte
@@ -144,9 +148,9 @@ func (o Object) Rect() (min, max [3]float64) {
 }
 
 // Point returns a point that represents the center position of the Object
-func (o Object) Point() [3]float64 {
+func (o Object) Center() Position {
 	min, max := o.Rect()
-	return [3]float64{
+	return Position{
 		(max[0] + min[0]) / 2,
 		(max[1] + min[1]) / 2,
 		(max[2] + min[2]) / 2,
@@ -212,43 +216,6 @@ func (o Object) Members() []byte {
 		return geomData[5 : 5+sz : 5+sz]
 	}
 	return nil
-}
-
-// PointCount returns the total number of points in the geometry.
-func (o Object) PointCount() int {
-	geom, _, geomType := o.Geometry()
-	switch geomType {
-	default:
-		return 0
-	case Point:
-		return 1
-	case MultiPoint, LineString:
-		points := geom.([][]float64)
-		return len(points)
-	case MultiLineString, Polygon:
-		var n int
-		points := geom.([][][]float64)
-		for _, points := range points {
-			n += len(points)
-		}
-		return n
-	case MultiPolygon:
-		var n int
-		points := geom.([][][][]float64)
-		for _, points := range points {
-			for _, points := range points {
-				n += len(points)
-			}
-		}
-		return n
-	case GeometryCollection, FeatureCollection:
-		var n int
-		geoms := geom.([]Object)
-		for _, geom := range geoms {
-			n += geom.PointCount()
-		}
-		return n
-	}
 }
 
 // Dims returns the number of dimensions for the geometry object.
@@ -522,21 +489,21 @@ func appendGeojsonBytes(json []byte, o Object) []byte {
 		return append(json, `{"type":"Unknown"}`...)
 	case 1:
 		// simple 2D point
-		p := o.Point()
+		p := o.Center()
 		json := append(json, `{"type":"Point","coordinates":[`...)
-		json = strconv.AppendFloat(json, p[0], 'f', -1, 64)
+		json = strconv.AppendFloat(json, p.X, 'f', -1, 64)
 		json = append(json, ',')
-		json = strconv.AppendFloat(json, p[1], 'f', -1, 64)
+		json = strconv.AppendFloat(json, p.Y, 'f', -1, 64)
 		return append(json, ']', '}')
 	case 3:
 		// simple 3D point
-		p := o.Point()
+		p := o.Center()
 		json := append(json, `{"type":"Point","coordinates":[`...)
-		json = strconv.AppendFloat(json, p[0], 'f', -1, 64)
+		json = strconv.AppendFloat(json, p.X, 'f', -1, 64)
 		json = append(json, ',')
-		json = strconv.AppendFloat(json, p[1], 'f', -1, 64)
+		json = strconv.AppendFloat(json, p.Y, 'f', -1, 64)
 		json = append(json, ',')
-		json = strconv.AppendFloat(json, p[2], 'f', -1, 64)
+		json = strconv.AppendFloat(json, p.Z, 'f', -1, 64)
 		return append(json, ']', '}')
 	case 5:
 		// simple 2D rect
@@ -1110,13 +1077,56 @@ func (o Object) GeometryType() GeometryType {
 	return GeometryType(o.data[bboxSize+exsz] >> 4)
 }
 
+func (o Object) polySimplePairsFor2DRect() []Position {
+	min, max := o.Rect()
+	return []Position{
+		{min[0], min[1], 0}, {max[0], min[1], 0}, {max[0], max[1], 0},
+		{min[0], max[1], 0}, {min[0], min[1], 0},
+	}
+}
+
+func (o Object) polySimplePairsFor3DRect() [][]Position {
+	min, max := o.Rect()
+	return [][]Position{
+		// bottom
+		{{min[0], min[1], min[2]}, {max[0], min[1], min[2]}, {max[0], max[1], min[2]}, {min[0], max[1], min[2]}, {min[0], min[1], min[2]}},
+		// north
+		{{min[0], max[1], min[2]}, {max[0], max[1], min[2]}, {max[0], max[1], max[2]}, {min[0], max[1], max[2]}, {min[0], max[1], min[2]}},
+		// south
+		{{min[0], min[1], min[2]}, {max[0], min[1], min[2]}, {max[0], min[1], max[2]}, {min[0], min[1], max[2]}, {min[0], min[1], min[2]}},
+		// west
+		{{min[0], min[1], min[2]}, {min[0], max[1], min[2]}, {min[0], max[1], max[2]}, {min[0], min[1], max[2]}, {min[0], min[1], min[2]}},
+		// east
+		{{max[0], min[1], min[2]}, {max[0], max[1], min[2]}, {max[0], max[1], max[2]}, {max[0], min[1], max[2]}, {max[0], min[1], min[2]}},
+		//top
+		{{min[0], min[1], max[2]}, {max[0], min[1], max[2]}, {max[0], max[1], max[2]}, {min[0], max[1], max[2]}, {min[0], min[1], max[2]}},
+	}
+}
+
+// readFloat64 reads a float64 from a data.
+func readFloat64(data []byte) (float64, []byte) {
+	f := math.Float64frombits(binary.LittleEndian.Uint64(data))
+	return f, data[8:]
+}
+
+// polyReadPosition reads a point from a data and returns the new point.
+func polyReadPosition(data []byte, dims int) (Position, []byte) {
+	var p Position
+	p.X, data = readFloat64(data)
+	p.Y, data = readFloat64(data)
+	if dims == 3 {
+		p.Z, data = readFloat64(data)
+	}
+	return p, data
+}
+
 // Geometry returns the underlying geometry points or collection. The geom is
 // one of the following for the geomType:
 // Unknown -> nil;
-// Point -> []float64;
-// MultiPoint, LineString -> [][]float64;
-// MultiLineString, Polygon -> [][][]float64;
-// MultiPolygon -> [][][][]float64;
+// Point -> Position;
+// MultiPoint, LineString -> []Position;
+// MultiLineString, Polygon -> [][]Position;
+// MultiPolygon -> [][][]Position;
 // GeometryCollection, FeatureCollection -> []Object;
 // Dims is zero for Unknown, GeometryCollection, and FeatureCollection;
 // Otherwise it's 2 or 3.
@@ -1156,26 +1166,20 @@ func (o Object) Geometry() (geom interface{}, dims int, geomType GeometryType) {
 		case 48:
 			// simple 3d rect
 			geomType = MultiPolygon
-			geom = [][][][]float64{o.simplePairsFor3DRect()}
+			geom = [][][]Position{o.polySimplePairsFor3DRect()}
 		case 32:
 			// simple 2d rect
 			geomType = Polygon
-			geom = [][][]float64{o.simplePairsFor2DRect()}
+			geom = [][]Position{o.polySimplePairsFor2DRect()}
 		case 24:
 			// simple 3d point
 			geomType = Point
-			geom = []float64{
-				math.Float64frombits(binary.LittleEndian.Uint64(o.data)),
-				math.Float64frombits(binary.LittleEndian.Uint64(o.data[8:])),
-				math.Float64frombits(binary.LittleEndian.Uint64(o.data[16:])),
-			}
+			geom, _ = polyReadPosition(o.data, 3)
 		case 16:
 			// simple 2d point
 			geomType = Point
-			geom = []float64{
-				math.Float64frombits(binary.LittleEndian.Uint64(o.data)),
-				math.Float64frombits(binary.LittleEndian.Uint64(o.data[8:])),
-			}
+			geom, _ = polyReadPosition(o.data, 2)
+
 		}
 		return
 	}
@@ -1196,58 +1200,42 @@ func (o Object) Geometry() (geom interface{}, dims int, geomType GeometryType) {
 	}
 	switch geomType {
 	case Point:
-		points := make([]float64, dims)
-		for i := 0; i < dims; i++ {
-			points[i] = math.Float64frombits(binary.LittleEndian.Uint64(geomData[i*8:]))
-		}
-		geom = points
+		geom, _ = polyReadPosition(geomData, dims)
 	case MultiPoint, LineString:
 		n := int(binary.LittleEndian.Uint32(geomData))
 		geomData = geomData[4:]
-		points := make([][]float64, n)
+		points := make([]Position, n)
 		for i := 0; i < n; i++ {
-			points[i] = make([]float64, dims)
-			for j := 0; j < dims; j++ {
-				points[i][j] = math.Float64frombits(binary.LittleEndian.Uint64(geomData))
-				geomData = geomData[8:]
-			}
+			points[i], geomData = polyReadPosition(geomData, dims)
 		}
 		geom = points
 	case MultiLineString, Polygon:
 		n := int(binary.LittleEndian.Uint32(geomData))
 		geomData = geomData[4:]
-		points := make([][][]float64, n)
+		points := make([][]Position, n)
 		for i := 0; i < n; i++ {
 			nn := int(binary.LittleEndian.Uint32(geomData))
 			geomData = geomData[4:]
-			points[i] = make([][]float64, nn)
+			points[i] = make([]Position, nn)
 			for j := 0; j < nn; j++ {
-				points[i][j] = make([]float64, dims)
-				for k := 0; k < dims; k++ {
-					points[i][j][k] = math.Float64frombits(binary.LittleEndian.Uint64(geomData))
-					geomData = geomData[8:]
-				}
+				points[i][j], geomData = polyReadPosition(geomData, dims)
 			}
 		}
 		geom = points
 	case MultiPolygon:
 		n := int(binary.LittleEndian.Uint32(geomData))
 		geomData = geomData[4:]
-		points := make([][][][]float64, n)
+		points := make([][][]Position, n)
 		for i := 0; i < n; i++ {
 			nn := int(binary.LittleEndian.Uint32(geomData))
 			geomData = geomData[4:]
-			points[i] = make([][][]float64, nn)
+			points[i] = make([][]Position, nn)
 			for j := 0; j < nn; j++ {
 				nnn := int(binary.LittleEndian.Uint32(geomData))
 				geomData = geomData[4:]
-				points[i][j] = make([][]float64, nnn)
+				points[i][j] = make([]Position, nnn)
 				for k := 0; k < nnn; k++ {
-					points[i][j][k] = make([]float64, dims)
-					for l := 0; l < dims; l++ {
-						points[i][j][k][l] = math.Float64frombits(binary.LittleEndian.Uint64(geomData))
-						geomData = geomData[8:]
-					}
+					points[i][j][k], geomData = polyReadPosition(geomData, dims)
 				}
 			}
 		}
@@ -1269,4 +1257,41 @@ func (o Object) Geometry() (geom interface{}, dims int, geomType GeometryType) {
 		return Object{geomData[4 : 4+sz : 4+sz]}.Geometry()
 	}
 	return
+}
+
+// PositionCount returns the total number of points in the geometry.
+func (o Object) PositionCount() int {
+	geom, _, geomType := o.Geometry()
+	switch geomType {
+	default:
+		return 0
+	case Point:
+		return 1
+	case MultiPoint, LineString:
+		points := geom.([]Position)
+		return len(points)
+	case MultiLineString, Polygon:
+		var n int
+		points := geom.([][]Position)
+		for _, points := range points {
+			n += len(points)
+		}
+		return n
+	case MultiPolygon:
+		var n int
+		points := geom.([][][]Position)
+		for _, points := range points {
+			for _, points := range points {
+				n += len(points)
+			}
+		}
+		return n
+	case GeometryCollection, FeatureCollection:
+		var n int
+		geoms := geom.([]Object)
+		for _, geom := range geoms {
+			n += geom.PositionCount()
+		}
+		return n
+	}
 }
