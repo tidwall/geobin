@@ -148,12 +148,21 @@ func (o Object) Rect() (min, max [3]float64) {
 }
 
 // Point returns a point that represents the center position of the Object
-func (o Object) Center() Position {
+func (o Object) Position() Position {
 	min, max := o.Rect()
 	return Position{
 		(max[0] + min[0]) / 2,
 		(max[1] + min[1]) / 2,
 		(max[2] + min[2]) / 2,
+	}
+}
+
+// BBox returns the bounding box of the object.
+func (o Object) BBox() BBox {
+	min, max := o.Rect()
+	return BBox{
+		Min: Position{min[0], min[1], min[2]},
+		Max: Position{max[0], max[1], max[2]},
 	}
 }
 
@@ -489,7 +498,7 @@ func appendGeojsonBytes(json []byte, o Object) []byte {
 		return append(json, `{"type":"Unknown"}`...)
 	case 1:
 		// simple 2D point
-		p := o.Center()
+		p := o.Position()
 		json := append(json, `{"type":"Point","coordinates":[`...)
 		json = strconv.AppendFloat(json, p.X, 'f', -1, 64)
 		json = append(json, ',')
@@ -497,7 +506,7 @@ func appendGeojsonBytes(json []byte, o Object) []byte {
 		return append(json, ']', '}')
 	case 3:
 		// simple 3D point
-		p := o.Center()
+		p := o.Position()
 		json := append(json, `{"type":"Point","coordinates":[`...)
 		json = strconv.AppendFloat(json, p.X, 'f', -1, 64)
 		json = append(json, ',')
