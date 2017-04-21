@@ -5,7 +5,21 @@ The Geobin Object represents tightly packed geometry that is compatible with [Ge
 
 [Specification](SPEC.md)
 
-**This project is a work in progress**
+The purpose of this package is to provide a new binary format for Tile38 geometries.
+Tile38 currently uses standard Go structs that contain nested pointer, slices, arrays, etc. 
+This new format is packed in a contiguous byte stream that can be packed inside a [Pair object](https://github.com/tidwall/pair). It also precalcs the bbox for fast spatial indexing.
+
+**This project is a (sweet) work in progress. The API will likely change between now and Tile38 v2.0 release.**
+
+#### Notes
+
+- Objects take up no more than one allocation.
+- 2D Point size is 17 bytes
+- 3D Point size is 25 bytes
+- Objects have precalculated bboxes
+- Polygon detection formulas (Intersects, Within, etc) are currently bridging
+  the Tile38 GeoJSON package. Hopefully this will be native by Tile38 2.0 launch.
+
 
 ## Contact
 
