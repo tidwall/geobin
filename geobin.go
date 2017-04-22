@@ -270,8 +270,8 @@ func (o Object) parseComponents() (c components) {
 				bboxSize = 16
 			}
 		}
+		c.bbox = o.data[:bboxSize]
 	}
-	c.bbox = o.data[:bboxSize]
 
 	if c.tail>>4&1 == 1 {
 		// haseexdata
