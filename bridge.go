@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 
 	"github.com/tidwall/tile38/geojson"
+	"github.com/tidwall/tile38/geojson/geohash"
 )
 
 type BBox struct {
@@ -290,4 +291,11 @@ func (o Object) bridge() geojson.Object {
 			//idprops:  string(o.Members()),
 		}
 	}
+}
+
+func GeohashEncode(lat, lon float64, precision int) (string, error) {
+	return geohash.Encode(lat, lon, precision)
+}
+func GeohashDecode(hash string) (lat, lon float64, err error) {
+	return geohash.Decode(hash)
 }
