@@ -6,7 +6,7 @@ The Geobin Object represents tightly packed geometry that is compatible with [Ge
 ## Object layout
 
 ```
-[OBJECT] >> [BBOX][EXDATA][DATA][EXDATASIZE][TAIL]
+[OBJECT] >> [BBOX][DATA][EXDATA][EXDATASIZE][TAIL]
 ```
 
 ### TAIL
@@ -60,7 +60,7 @@ ELSE
 ### DATA
 
 ```
-[DATA] = {BYTES AT LEN(BBOX)+LEN(EXDATA) TO LEN(OBJECT)-LEN(EXDATASIZE)-1}
+[DATA] = {BYTES AT LEN(BBOX) TO LEN(OBJECT)-LEN(EXDATA)-LEN(EXDATASIZE)-1}
 IF STRING:
     <DONE>  # The data is the string value
 ELSE IF 

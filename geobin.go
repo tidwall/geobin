@@ -214,12 +214,7 @@ func (o Object) Members() []byte {
 		}
 	}
 	// complex, let's pull the geom data
-	var exsz int
-	if tail>>4&1 == 1 {
-		// has exdata, skip over
-		exsz = int(binary.LittleEndian.Uint32(o.data[len(o.data)-5:]))
-	}
-	geomData := o.data[bboxSize+exsz:]
+	geomData := o.data[bboxSize:]
 	if geomData[0]&1 == 1 {
 		sz := int(binary.LittleEndian.Uint32(geomData[1:]))
 		return geomData[5 : 5+sz : 5+sz]
@@ -276,16 +271,16 @@ func (o Object) parseComponents() (c components) {
 			}
 		}
 	}
-	var exdataSize int
-	var exdataSizeSize int
+	c.bbox = o.data[:bboxSize]
+
 	if c.tail>>4&1 == 1 {
 		// haseexdata
-		exdataSize = int(binary.LittleEndian.Uint32(o.data[len(o.data)-5:]))
-		exdataSizeSize = 4
+		exdataSize := int(binary.LittleEndian.Uint32(o.data[len(o.data)-5:]))
+		c.exdata = o.data[len(o.data)-5-exdataSize : len(o.data)-5]
+		c.data = o.data[bboxSize : len(o.data)-5-exdataSize]
+	} else {
+		c.data = o.data[bboxSize : len(o.data)-1]
 	}
-	c.bbox = o.data[:bboxSize]
-	c.exdata = o.data[bboxSize : bboxSize+exdataSize]
-	c.data = o.data[bboxSize+exdataSize : len(o.data)-1-exdataSizeSize]
 	return c
 }
 
@@ -294,17 +289,17 @@ func (c *components) reconstructObject() Object {
 	if len(c.exdata) > 0 {
 		exdataSizeSize = 4
 	}
-	data := make([]byte, len(c.bbox)+len(c.exdata)+len(c.data)+exdataSizeSize+1)
-	copy(data, c.bbox)
+	raw := make([]byte, len(c.bbox)+len(c.data)+len(c.exdata)+exdataSizeSize+1)
+	copy(raw, c.bbox)
 	if exdataSizeSize > 0 {
-		data[len(data)-1] = c.tail | byte(1<<4)
-		copy(data[len(c.bbox):], c.exdata)
-		binary.LittleEndian.PutUint32(data[len(data)-5:], uint32(len(c.exdata)))
+		raw[len(raw)-1] = c.tail | byte(1<<4)
+		binary.LittleEndian.PutUint32(raw[len(raw)-5:], uint32(len(c.exdata)))
+		copy(raw[len(raw)-5-len(c.exdata):], c.exdata)
 	} else {
-		data[len(data)-1] = c.tail & ^byte(1<<4)
+		raw[len(raw)-1] = c.tail & ^byte(1<<4)
 	}
-	copy(data[len(c.bbox)+len(c.exdata):], c.data)
-	return Object{data}
+	copy(raw[len(c.bbox):], c.data)
+	return Object{raw}
 }
 
 func makeSixAny(tail byte, count int, any [6]float64) Object {
@@ -1079,11 +1074,7 @@ func (o Object) GeometryType() GeometryType {
 		}
 	}
 	// complex
-	var exsz int
-	if tail>>4&1 == 1 {
-		exsz = int(binary.LittleEndian.Uint32(o.data[len(o.data)-5:]))
-	}
-	return GeometryType(o.data[bboxSize+exsz] >> 4)
+	return GeometryType(o.data[bboxSize] >> 4)
 }
 
 func (o Object) polySimplePairsFor2DRect() []Position {
@@ -1332,11 +1323,6 @@ func (o Object) Geometry() Geometry {
 	}
 	// complex, let's pull the geom data
 	geom.Data = o.data[bboxSize:]
-	if tail>>4&1 == 1 {
-		// has exdata, skip over
-		exsz := int(binary.LittleEndian.Uint32(o.data[len(o.data)-5:]))
-		geom.Data = geom.Data[exsz:]
-	}
 	geom.Type = GeometryType(geom.Data[0] >> 4)
 	if geom.Data[0]&1 == 1 {
 		// has members, skip over

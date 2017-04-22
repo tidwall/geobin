@@ -173,7 +173,7 @@ func TestStringToJSON(t *testing.T) {
 	assert.Equal(t, string(data), o.JSON())
 	o2 := o.SetExData([]byte("extra"))
 	assert.Equal(t, []byte("extra"), o2.ExData())
-	assert.Equal(t, []byte(""), o.ExData())
+	assert.Equal(t, "", string(o.ExData()))
 	assert.Equal(t, 0, o.PositionCount())
 	assert.Equal(t, 0, o.Dims())
 	assert.Equal(t, o2.String(), o.String())
