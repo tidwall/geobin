@@ -63,34 +63,55 @@ func (o Object) IsGeometry() bool {
 
 // String returns a string representation of the object.
 func (o Object) String() string {
+	return string(o.AppendString(nil))
+}
+
+func (o Object) AppendString(b []byte) []byte {
 	if o.IsGeometry() {
-		return string(o.geojsonBytes())
+		return appendGeojsonBytes(b, o)
 	}
 	if len(o.data) == 0 {
-		return ""
+		return b
 	}
 	if o.data[len(o.data)-1] == 0 {
-		return string(o.data[:len(o.data)-1])
+		return append(b, o.data[:len(o.data)-1]...)
 	}
-	return string(o.parseComponents().data)
+	return append(b, o.parseComponents().data...)
 }
 
 // JSON returns a JSON representation of the object. Geometries are converted
 // to GeoJSON and strings are simple JSON strings.
 func (o Object) JSON() string {
+	return string(o.AppendJSON(nil))
+}
+
+func (o Object) AppendJSON(b []byte) []byte {
 	if o.IsGeometry() {
-		return string(o.geojsonBytes())
+		return appendGeojsonBytes(b, o)
 	}
 	if len(o.data) == 0 {
-		return "null"
+		return append(b, "null"...)
 	}
 	var str []byte
 	if o.data[len(o.data)-1] == 0 {
 		str = o.data[:len(o.data)-1]
+	} else {
+		str = o.parseComponents().data
 	}
-	str = o.parseComponents().data
-	data, _ := json.Marshal(string(str))
-	return string(data)
+	return appendJSONStringBytes(b, str)
+}
+
+func appendJSONStringBytes(b []byte, s []byte) []byte {
+	for i := 0; i < len(s); i++ {
+		if s[i] < ' ' || s[i] == '\\' || s[i] == '"' || s[i] > 126 {
+			d, _ := json.Marshal(string(s))
+			return append(b, d...)
+		}
+	}
+	b = append(b, '"')
+	b = append(b, s...)
+	b = append(b, '"')
+	return b
 }
 
 // Rect returns the bounding box of the Object
@@ -457,9 +478,7 @@ func appendGeojsonBytesPolygon(json []byte, pairs [][]float64) []byte {
 	json = append(json, ']')
 	return json
 }
-func (o Object) geojsonBytes() []byte {
-	return appendGeojsonBytes(nil, o)
-}
+
 func (o Object) simplePairsFor2DRect() [][]float64 {
 	min, max := o.Rect()
 	return [][]float64{
