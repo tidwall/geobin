@@ -114,8 +114,19 @@ func appendJSONStringBytes(b []byte, s []byte) []byte {
 	return b
 }
 
-// Rect returns the bounding box of the Object
-func (o Object) Rect() (min, max [3]float64) {
+// Rect returns the bounding box of the Object. The transformer parameter
+// allows for transforming the bounding box prior to returning.
+func (o Object) Rect(
+	transformer func(minIn, maxIn [3]float64) (minOut, maxOut [3]float64),
+) (min, max [3]float64) {
+	min, max = o.rect()
+	if transformer != nil {
+		min, max = transformer(min, max)
+	}
+	return min, max
+}
+
+func (o Object) rect() (min, max [3]float64) {
 	if !o.IsGeometry() {
 		return
 	}
@@ -168,9 +179,23 @@ func (o Object) Rect() (min, max [3]float64) {
 	return
 }
 
-// Point returns a point that represents the center position of the Object
+// Center returns a point that represents the center point of the object's
+// bounding box. The transformer function allows for transforming the
+// the bouning area.
+func (o Object) Center(
+	transformer func(minIn, maxIn [3]float64) (minOut, maxOut [3]float64),
+) [3]float64 {
+	min, max := o.Rect(transformer)
+	return [3]float64{
+		(max[0] + min[0]) / 2,
+		(max[1] + min[1]) / 2,
+		(max[2] + min[2]) / 2,
+	}
+}
+
+// Position returns a point that represents the center point of the object.
 func (o Object) Position() Position {
-	min, max := o.Rect()
+	min, max := o.Rect(nil)
 	return Position{
 		(max[0] + min[0]) / 2,
 		(max[1] + min[1]) / 2,
@@ -180,7 +205,7 @@ func (o Object) Position() Position {
 
 // BBox returns the bounding box of the object.
 func (o Object) BBox() BBox {
-	min, max := o.Rect()
+	min, max := o.Rect(nil)
 	return BBox{
 		Min: Position{min[0], min[1], min[2]},
 		Max: Position{max[0], max[1], max[2]},
@@ -480,13 +505,13 @@ func appendGeojsonBytesPolygon(json []byte, pairs [][]float64) []byte {
 }
 
 func (o Object) simplePairsFor2DRect() [][]float64 {
-	min, max := o.Rect()
+	min, max := o.Rect(nil)
 	return [][]float64{
 		{min[0], min[1]}, {max[0], min[1]}, {max[0], max[1]}, {min[0], max[1]}, {min[0], min[1]},
 	}
 }
 func (o Object) simplePairsFor3DRect() [][][]float64 {
-	min, max := o.Rect()
+	min, max := o.Rect(nil)
 	return [][][]float64{
 		// bottom
 		{{min[0], min[1], min[2]}, {max[0], min[1], min[2]}, {max[0], max[1], min[2]}, {min[0], max[1], min[2]}, {min[0], min[1], min[2]}},
@@ -860,7 +885,7 @@ func collectionFromJSON(typ GeometryType, bbox, geoms gjson.Result) Object {
 		if gdims > dims {
 			dims = gdims
 		}
-		gmin, gmax := g.Rect()
+		gmin, gmax := g.Rect(nil)
 		for i := 0; i < gdims; i++ {
 			if gmin[i] < min[i] {
 				min[i] = gmin[i]
@@ -1097,7 +1122,7 @@ func (o Object) GeometryType() GeometryType {
 }
 
 func (o Object) polySimplePairsFor2DRect() []Position {
-	min, max := o.Rect()
+	min, max := o.Rect(nil)
 	return []Position{
 		{min[0], min[1], 0}, {max[0], min[1], 0}, {max[0], max[1], 0},
 		{min[0], max[1], 0}, {min[0], min[1], 0},
@@ -1105,7 +1130,7 @@ func (o Object) polySimplePairsFor2DRect() []Position {
 }
 
 func (o Object) polySimplePairsFor3DRect() [][]Position {
-	min, max := o.Rect()
+	min, max := o.Rect(nil)
 	return [][]Position{
 		// bottom
 		{{min[0], min[1], min[2]}, {max[0], min[1], min[2]}, {max[0], max[1], min[2]}, {min[0], max[1], min[2]}, {min[0], min[1], min[2]}},

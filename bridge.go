@@ -34,6 +34,7 @@ func (g Object) Within(o Object) bool {
 
 // Intersects detects if the object intersects another object.
 func (g Object) Intersects(o Object) bool {
+	println(g.JSON(), o.JSON())
 	return g.bridge().Intersects(o.bridge())
 }
 

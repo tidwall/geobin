@@ -14,7 +14,7 @@ import (
 )
 
 func toJSON(o Object) string {
-	min, max := o.Rect()
+	min, max := o.Rect(nil)
 	if min[0] == max[0] && min[1] == max[1] && min[2] == max[2] && min[2] == 0 {
 		return fmt.Sprintf(`[%s,%s]`,
 			strconv.FormatFloat(min[0], 'f', -1, 64),
