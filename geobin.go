@@ -3,11 +3,18 @@ package geobin
 import (
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"math"
 	"strconv"
 
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/pretty"
+)
+
+var (
+	errInvalidType        = errors.New("invalid geojson type")
+	errInvalidCoordinates = errors.New("invalid geojson coordinates")
+	errInvalidGeometry    = errors.New("invalid geojson geometry")
 )
 
 // Position represents an 3D point
@@ -22,6 +29,11 @@ type Object struct {
 
 // ParseJSON parses GeoJSON and returns an geobin object.
 func ParseJSON(json string) Object {
+	o, _ := ParseJSONWithErrors(json)
+	return o
+}
+
+func ParseJSONWithErrors(json string) (Object, error) {
 	return objectFromJSON(json)
 }
 
@@ -724,7 +736,10 @@ func tailFromBBoxJSON(bbox gjson.Result) (tail byte, data []byte) {
 	return 15, data
 }
 
-func level1FromJSON(typ GeometryType, bbox, coords gjson.Result) Object {
+func level1FromJSON(typ GeometryType, bbox, coords gjson.Result) (Object, error) {
+	if !coords.Exists() {
+		return Object{}, errInvalidCoordinates
+	}
 	vals, dims, min, max := valsFromCoords1(coords, baseMin, baseMax)
 	if dims < 2 {
 		dims = 2
@@ -738,10 +753,13 @@ func level1FromJSON(typ GeometryType, bbox, coords gjson.Result) Object {
 	}
 	raw = appendGeomData1(raw, vals, dims)
 	raw = append(raw, tail)
-	return Object{raw}
+	return Object{raw}, nil
 }
 
-func level2FromJSON(typ GeometryType, bbox, coords gjson.Result) Object {
+func level2FromJSON(typ GeometryType, bbox, coords gjson.Result) (Object, error) {
+	if !coords.Exists() {
+		return Object{}, errInvalidCoordinates
+	}
 	vals, dims, min, max := valsFromCoords2(coords, baseMin, baseMax)
 	if dims < 2 {
 		dims = 2
@@ -752,7 +770,7 @@ func level2FromJSON(typ GeometryType, bbox, coords gjson.Result) Object {
 	if !exportBBox && typ == Polygon && dims == 2 && len(vals) == 1 {
 		if polyRectIsNormal(vals[0], 0, 1, 2) {
 			// simple 2D rectangle
-			return Make2DRect(min[0], min[1], max[0], max[1])
+			return Make2DRect(min[0], min[1], max[0], max[1]), nil
 		}
 	}
 	if exportBBox {
@@ -762,7 +780,7 @@ func level2FromJSON(typ GeometryType, bbox, coords gjson.Result) Object {
 	}
 	raw = appendGeomData2(raw, vals, dims)
 	raw = append(raw, tail)
-	return Object{raw}
+	return Object{raw}, nil
 }
 
 func polyRectIsNormal(points [][3]float64, x, y, z int) bool {
@@ -795,7 +813,10 @@ func polyRectIsNormal(points [][3]float64, x, y, z int) bool {
 	}
 	return true
 }
-func level3FromJSON(typ GeometryType, bbox, coords gjson.Result) Object {
+func level3FromJSON(typ GeometryType, bbox, coords gjson.Result) (Object, error) {
+	if !coords.Exists() {
+		return Object{}, errInvalidCoordinates
+	}
 	vals, dims, min, max := valsFromCoords3(coords, baseMin, baseMax)
 	if dims < 2 {
 		dims = 2
@@ -829,7 +850,7 @@ func level3FromJSON(typ GeometryType, bbox, coords gjson.Result) Object {
 			}
 		}
 		if simple {
-			return Make3DRect(min[0], min[1], min[2], max[0], max[1], max[2])
+			return Make3DRect(min[0], min[1], min[2], max[0], max[1], max[2]), nil
 		}
 	}
 	if exportBBox {
@@ -839,10 +860,13 @@ func level3FromJSON(typ GeometryType, bbox, coords gjson.Result) Object {
 	}
 	raw = appendGeomData3(raw, vals, dims)
 	raw = append(raw, tail)
-	return Object{raw}
+	return Object{raw}, nil
 }
-func pointFromJSON(bbox, coords gjson.Result) Object {
+func pointFromJSON(bbox, coords gjson.Result) (Object, error) {
 	typ := Point
+	if !coords.Exists() {
+		return Object{}, errInvalidCoordinates
+	}
 	vals, dims := valsFromCoords0(coords)
 	if dims < 2 {
 		dims = 2
@@ -851,9 +875,9 @@ func pointFromJSON(bbox, coords gjson.Result) Object {
 	if tail == 0 {
 		// use simple a object
 		if dims == 2 {
-			return Make2DPoint(vals[0], vals[1])
+			return Make2DPoint(vals[0], vals[1]), nil
 		}
-		return Make3DPoint(vals[0], vals[1], vals[2])
+		return Make3DPoint(vals[0], vals[1], vals[2]), nil
 	}
 	// clip the dims to the bbox
 	dims = len(bboxData) / 16
@@ -876,17 +900,24 @@ func pointFromJSON(bbox, coords gjson.Result) Object {
 		binary.LittleEndian.PutUint64(data[41:], math.Float64bits(vals[1]))
 		data[49] = tail
 	}
-	return Object{data}
+	return Object{data}, nil
 }
 
-func collectionFromJSON(typ GeometryType, bbox, geoms gjson.Result) Object {
+func collectionFromJSON(typ GeometryType, bbox, geoms gjson.Result) (Object, error) {
 	var dims int
 	min, max := baseMin, baseMax
 	var vals []Object
 	var invalid bool
+	var lasterr error
 	geoms.ForEach(func(_, val gjson.Result) bool {
-		g := objectFromJSON(val.Raw)
+		g, err := objectFromJSON(val.Raw)
+		if err != nil {
+			lasterr = err
+			invalid = true
+			return false
+		}
 		if !g.IsGeometry() {
+			lasterr = errInvalidGeometry
 			invalid = true
 			return false
 		}
@@ -907,7 +938,7 @@ func collectionFromJSON(typ GeometryType, bbox, geoms gjson.Result) Object {
 		return true
 	})
 	if invalid {
-		return Object{}
+		return Object{}, lasterr
 	}
 	if dims < 2 {
 		dims = 2
@@ -929,13 +960,16 @@ func collectionFromJSON(typ GeometryType, bbox, geoms gjson.Result) Object {
 		raw = append(raw, data...)
 	}
 	raw = append(raw, tail)
-	return Object{raw}
+	return Object{raw}, nil
 }
-func featureFromJSON(bbox, geom, id, props gjson.Result) Object {
+func featureFromJSON(bbox, geom, id, props gjson.Result) (Object, error) {
 	typ := byte(Feature)
-	g := objectFromJSON(geom.Raw)
+	g, err := objectFromJSON(geom.Raw)
+	if err != nil {
+		return Object{}, err
+	}
 	if !g.IsGeometry() {
-		return Object{}
+		return Object{}, errInvalidGeometry
 	}
 	var exportBBox bool
 	tail, bboxData := tailFromBBoxJSON(bbox)
@@ -1004,13 +1038,13 @@ func featureFromJSON(bbox, geom, id, props gjson.Result) Object {
 	binary.LittleEndian.PutUint32(raw[len(raw)-4:], uint32(len(g.data)))
 	raw = append(raw, g.data...)
 	raw = append(raw, tail)
-	return Object{raw}
+	return Object{raw}, nil
 }
 
-func objectFromJSON(json string) Object {
+func objectFromJSON(json string) (Object, error) {
 	switch gjson.Get(json, "type").String() {
 	default:
-		return Object{}
+		return Object{}, errInvalidType
 	case "Point":
 		return pointFromJSON(gjson.Get(json, "bbox"), gjson.Get(json, "coordinates"))
 	case "MultiPoint":
@@ -1178,147 +1212,6 @@ func readPosition(data []byte, dims int) (Position, []byte) {
 	}
 	return p, data
 }
-
-/*
-// Geometry returns the underlying geometry points or collection. The geom is
-// one of the following for the geomType:
-// Unknown -> nil;
-// Point -> Position;
-// MultiPoint, LineString -> []Position;
-// MultiLineString, Polygon -> [][]Position;
-// MultiPolygon -> [][][]Position;
-// GeometryCollection, FeatureCollection -> []Object;
-// Dims is zero for Unknown, GeometryCollection, and FeatureCollection;
-// Otherwise it's 2 or 3.
-func (o Object) Geometry() (geom interface{}, dims int, geomType GeometryType) {
-	if len(o.data) == 0 {
-		// empty geometry
-		return
-	}
-	tail := o.data[len(o.data)-1]
-	if tail&1 == 0 {
-		// object is a string
-		return
-	}
-	var bboxSize int
-	if tail>>1&1 == 1 {
-		dims = 3
-		if tail>>2&1 == 1 {
-			// 3D rect
-			bboxSize = 48
-		} else {
-			// 3D point
-			bboxSize = 24
-		}
-	} else {
-		dims = 2
-		if tail>>2&1 == 1 {
-			// 2D rect
-			bboxSize = 32
-		} else {
-			// 2D point
-			bboxSize = 16
-		}
-	}
-	if (tail>>3)&1 == 0 {
-		// simple
-		switch bboxSize {
-		case 48:
-			// simple 3d rect
-			geomType = MultiPolygon
-			geom = [][][]Position{o.polySimplePairsFor3DRect()}
-		case 32:
-			// simple 2d rect
-			geomType = Polygon
-			geom = [][]Position{o.polySimplePairsFor2DRect()}
-		case 24:
-			// simple 3d point
-			geomType = Point
-			geom, _ = polyReadPosition(o.data, 3)
-		case 16:
-			// simple 2d point
-			geomType = Point
-			geom, _ = polyReadPosition(o.data, 2)
-
-		}
-		return
-	}
-	// complex, let's pull the geom data
-	var exsz int
-	if tail>>4&1 == 1 {
-		// has exdata, skip over
-		exsz = int(binary.LittleEndian.Uint32(o.data[len(o.data)-5:]))
-	}
-	geomData := o.data[bboxSize+exsz:]
-	geomHead := geomData[0]
-	hasMembers := geomHead&1 == 1
-	geomType = GeometryType(geomHead >> 4)
-	geomData = geomData[1:]
-	if hasMembers {
-		sz := int(binary.LittleEndian.Uint32(geomData))
-		geomData = geomData[4+sz:]
-	}
-	switch geomType {
-	case Point:
-		geom, _ = polyReadPosition(geomData, dims)
-	case MultiPoint, LineString:
-		n := int(binary.LittleEndian.Uint32(geomData))
-		geomData = geomData[4:]
-		points := make([]Position, n)
-		for i := 0; i < n; i++ {
-			points[i], geomData = polyReadPosition(geomData, dims)
-		}
-		geom = points
-	case MultiLineString, Polygon:
-		n := int(binary.LittleEndian.Uint32(geomData))
-		geomData = geomData[4:]
-		points := make([][]Position, n)
-		for i := 0; i < n; i++ {
-			nn := int(binary.LittleEndian.Uint32(geomData))
-			geomData = geomData[4:]
-			points[i] = make([]Position, nn)
-			for j := 0; j < nn; j++ {
-				points[i][j], geomData = polyReadPosition(geomData, dims)
-			}
-		}
-		geom = points
-	case MultiPolygon:
-		n := int(binary.LittleEndian.Uint32(geomData))
-		geomData = geomData[4:]
-		points := make([][][]Position, n)
-		for i := 0; i < n; i++ {
-			nn := int(binary.LittleEndian.Uint32(geomData))
-			geomData = geomData[4:]
-			points[i] = make([][]Position, nn)
-			for j := 0; j < nn; j++ {
-				nnn := int(binary.LittleEndian.Uint32(geomData))
-				geomData = geomData[4:]
-				points[i][j] = make([]Position, nnn)
-				for k := 0; k < nnn; k++ {
-					points[i][j][k], geomData = polyReadPosition(geomData, dims)
-				}
-			}
-		}
-		geom = points
-	case GeometryCollection, FeatureCollection:
-		dims = 0
-		n := int(binary.LittleEndian.Uint32(geomData))
-		geomData = geomData[4:]
-		objs := make([]Object, n)
-		for i := 0; i < n; i++ {
-			sz := int(binary.LittleEndian.Uint32(geomData))
-			o := Object{geomData[4 : 4+sz : 4+sz]}
-			geomData = geomData[4+sz:]
-			objs[i] = o
-		}
-		geom = objs
-	case Feature:
-		sz := int(binary.LittleEndian.Uint32(geomData))
-		return Object{geomData[4 : 4+sz : 4+sz]}.Geometry()
-	}
-	return
-}
-*/
 
 // PositionCount returns the total number of points in the geometry.
 func (o Object) PositionCount() int {
