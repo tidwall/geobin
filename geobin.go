@@ -529,7 +529,7 @@ func appendGeojsonBytesPolygon(json []byte, pairs [][]float64) []byte {
 func (o Object) simplePairsFor2DRect() [][]float64 {
 	min, max := o.Rect(nil)
 	return [][]float64{
-		{min[0], min[1]}, {max[0], min[1]}, {max[0], max[1]}, {min[0], max[1]}, {min[0], min[1]},
+		{min[0], min[1]}, {min[0], max[1]}, {max[0], max[1]}, {max[0], min[1]}, {min[0], min[1]},
 	}
 }
 func (o Object) simplePairsFor3DRect() [][][]float64 {
@@ -766,13 +766,13 @@ func level2FromJSON(typ GeometryType, bbox, coords gjson.Result) (Object, error)
 	}
 	tail, raw, exportBBox := tailFromBBoxJSONOrMakeIfNeeded(bbox, min, max, dims)
 	dims = len(raw) / 16 // clip to bbox dims
-	// check if it's a simple 2D rectangle
-	if !exportBBox && typ == Polygon && dims == 2 && len(vals) == 1 {
-		if polyRectIsNormal(vals[0], 0, 1, 2) {
-			// simple 2D rectangle
-			return Make2DRect(min[0], min[1], max[0], max[1]), nil
-		}
-	}
+	// // check if it's a simple 2D rectangle
+	// if !exportBBox && typ == Polygon && dims == 2 && len(vals) == 1 {
+	// 	if polyRectIsNormal(vals[0], 0, 1, 2) {
+	// 		// simple 2D rectangle
+	// 		return Make2DRect(min[0], min[1], max[0], max[1]), nil
+	// 	}
+	// }
 	if exportBBox {
 		raw = append(raw, (byte(typ)<<4)|2)
 	} else {
@@ -823,36 +823,36 @@ func level3FromJSON(typ GeometryType, bbox, coords gjson.Result) (Object, error)
 	}
 	tail, raw, exportBBox := tailFromBBoxJSONOrMakeIfNeeded(bbox, min, max, dims)
 	dims = len(raw) / 16 // clip to bbox dims
-	if !exportBBox && typ == MultiPolygon && dims == 3 && len(vals) == 6 {
-		simple := true
-		orders := [6][3]int{
-			// bottom
-			{0, 1, 2},
-			// north
-			{0, 2, 1},
-			// south
-			{0, 2, 1},
-			// west
-			{1, 2, 0},
-			// east
-			{1, 2, 0},
-			// top
-			{0, 1, 2},
-		}
-		for i := 0; i < len(vals); i++ {
-			var ok bool
-			if len(vals[i]) == 1 {
-				ok = polyRectIsNormal(vals[i][0], orders[i][0], orders[i][1], orders[i][2])
-			}
-			if !ok {
-				simple = false
-				break
-			}
-		}
-		if simple {
-			return Make3DRect(min[0], min[1], min[2], max[0], max[1], max[2]), nil
-		}
-	}
+	// if !exportBBox && typ == MultiPolygon && dims == 3 && len(vals) == 6 {
+	// 	simple := true
+	// 	orders := [6][3]int{
+	// 		// bottom
+	// 		{0, 1, 2},
+	// 		// north
+	// 		{0, 2, 1},
+	// 		// south
+	// 		{0, 2, 1},
+	// 		// west
+	// 		{1, 2, 0},
+	// 		// east
+	// 		{1, 2, 0},
+	// 		// top
+	// 		{0, 1, 2},
+	// 	}
+	// 	for i := 0; i < len(vals); i++ {
+	// 		var ok bool
+	// 		if len(vals[i]) == 1 {
+	// 			ok = polyRectIsNormal(vals[i][0], orders[i][0], orders[i][1], orders[i][2])
+	// 		}
+	// 		if !ok {
+	// 			simple = false
+	// 			break
+	// 		}
+	// 	}
+	// 	if simple {
+	// 		return Make3DRect(min[0], min[1], min[2], max[0], max[1], max[2]), nil
+	// 	}
+	// }
 	if exportBBox {
 		raw = append(raw, (byte(typ)<<4)|2)
 	} else {
