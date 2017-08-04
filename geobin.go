@@ -10,6 +10,7 @@ import (
 	"github.com/tidwall/pretty"
 )
 
+// Position represents an 3D point
 type Position struct {
 	X, Y, Z float64
 }
@@ -63,20 +64,27 @@ func (o Object) IsGeometry() bool {
 
 // String returns a string representation of the object.
 func (o Object) String() string {
-	return string(o.AppendString(nil))
+	return string(o.StringBytes())
 }
 
+// AppendString appends the string representation of the object to
+// to the provided input bytes and returns the modified slice.
 func (o Object) AppendString(b []byte) []byte {
+	return append(b, o.StringBytes()...)
+}
+
+// StringBytes returns a string representation of the object as bytes.
+func (o Object) StringBytes() []byte {
 	if o.IsGeometry() {
-		return appendGeojsonBytes(b, o)
+		return appendGeojsonBytes(nil, o)
 	}
 	if len(o.data) == 0 {
-		return b
+		return nil
 	}
 	if o.data[len(o.data)-1] == 0 {
-		return append(b, o.data[:len(o.data)-1]...)
+		return o.data[:len(o.data)-1]
 	}
-	return append(b, o.parseComponents().data...)
+	return o.parseComponents().data
 }
 
 // JSON returns a JSON representation of the object. Geometries are converted
@@ -85,6 +93,8 @@ func (o Object) JSON() string {
 	return string(o.AppendJSON(nil))
 }
 
+// AppendJSON appends the JSON representation of the object to
+// to the provided input bytes and returns the modified slice.
 func (o Object) AppendJSON(b []byte) []byte {
 	if o.IsGeometry() {
 		return appendGeojsonBytes(b, o)
